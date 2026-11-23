@@ -1,10 +1,11 @@
 //! Y.js operations for notebook manipulation (add cell, update cell, etc.)
 
 use anyhow::{bail, Context, Result};
-use nbformat::v4::Cell;
+use nbformat::v4::{Cell, CellMetadata};
 use yrs::types::ToJson;
 use yrs::{Any, Array, ArrayPrelim, ArrayRef, Map, MapPrelim, MapRef, Text, TextPrelim, Transact};
 
+use super::output_conversion::json_to_any;
 use super::ydoc::YDocClient;
 
 /// Selector for which cells to clear outputs from
@@ -52,14 +53,7 @@ fn add_cell_to_ydoc(doc: &yrs::Doc, cell: &Cell, index: usize) -> Result<()> {
             }
             cell_map.insert(&mut txn, "execution_state", "idle");
 
-            let metadata_prelim = if let Some(trusted) =
-                metadata.additional.get("trusted").and_then(|v| v.as_bool())
-            {
-                MapPrelim::from([("trusted", Any::Bool(trusted))])
-            } else {
-                MapPrelim::default()
-            };
-            cell_map.insert(&mut txn, "metadata", metadata_prelim);
+            cell_map.insert(&mut txn, "metadata", cell_metadata_to_prelim(metadata));
 
             let source_str = source_to_string(source);
             cell_map.insert(&mut txn, "source", TextPrelim::new(&source_str));
@@ -75,15 +69,7 @@ fn add_cell_to_ydoc(doc: &yrs::Doc, cell: &Cell, index: usize) -> Result<()> {
             cell_map.insert(&mut txn, "cell_type", "markdown");
             cell_map.insert(&mut txn, "id", id.as_str());
             cell_map.insert(&mut txn, "execution_state", "idle");
-
-            let metadata_prelim = if let Some(trusted) =
-                metadata.additional.get("trusted").and_then(|v| v.as_bool())
-            {
-                MapPrelim::from([("trusted", Any::Bool(trusted))])
-            } else {
-                MapPrelim::default()
-            };
-            cell_map.insert(&mut txn, "metadata", metadata_prelim);
+            cell_map.insert(&mut txn, "metadata", cell_metadata_to_prelim(metadata));
 
             let source_str = source_to_string(source);
             cell_map.insert(&mut txn, "source", TextPrelim::new(&source_str));
@@ -96,15 +82,7 @@ fn add_cell_to_ydoc(doc: &yrs::Doc, cell: &Cell, index: usize) -> Result<()> {
             cell_map.insert(&mut txn, "cell_type", "raw");
             cell_map.insert(&mut txn, "id", id.as_str());
             cell_map.insert(&mut txn, "execution_state", "idle");
-
-            let metadata_prelim = if let Some(trusted) =
-                metadata.additional.get("trusted").and_then(|v| v.as_bool())
-            {
-                MapPrelim::from([("trusted", Any::Bool(trusted))])
-            } else {
-                MapPrelim::default()
-            };
-            cell_map.insert(&mut txn, "metadata", metadata_prelim);
+            cell_map.insert(&mut txn, "metadata", cell_metadata_to_prelim(metadata));
 
             let source_str = source_to_string(source);
             cell_map.insert(&mut txn, "source", TextPrelim::new(&source_str));
@@ -112,6 +90,16 @@ fn add_cell_to_ydoc(doc: &yrs::Doc, cell: &Cell, index: usize) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Convert CellMetadata into a Y.js MapPrelim
+fn cell_metadata_to_prelim(metadata: &CellMetadata) -> MapPrelim {
+    match serde_json::to_value(metadata) {
+        Ok(serde_json::Value::Object(obj)) => {
+            obj.into_iter().map(|(k, v)| (k, json_to_any(&v))).collect()
+        }
+        _ => MapPrelim::default(),
+    }
 }
 
 /// Convert source Vec<String> to a single string

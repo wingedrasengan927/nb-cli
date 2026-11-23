@@ -63,7 +63,7 @@ pub fn output_to_map_prelim(output: &Output) -> MapPrelim {
 }
 
 /// Convert a serde_json::Value to a yrs::Any that can be inserted into Y.js structures
-fn json_to_any(value: &JsonValue) -> Any {
+pub(super) fn json_to_any(value: &JsonValue) -> Any {
     match value {
         JsonValue::Null => Any::Null,
         JsonValue::Bool(b) => Any::Bool(*b),
