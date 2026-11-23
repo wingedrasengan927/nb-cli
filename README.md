@@ -5,3 +5,9 @@
 ```bash
 nb cell add <notebook-name> -t markdown -s "# Heading" --metadata '{"my_key": "my_value"}'
 ```
+
+### Installation
+After installing cargo, run the following command in the project directory:
+```bash
+cargo install --path .
+```
