@@ -43,6 +43,10 @@ pub struct AddCellArgs {
     #[arg(long = "id", value_name = "ID")]
     pub id: Option<String>,
 
+    /// Cell metadata as a JSON object (e.g. '{"tags":["setup"]}')
+    #[arg(short = 'm', long = "metadata", value_name = "JSON")]
+    pub metadata: Option<String>,
+
     /// Jupyter server URL (for real-time updates if notebook is open)
     #[arg(long)]
     pub server: Option<String>,
@@ -295,9 +299,15 @@ impl CellMutator for AddCellMutator<'_> {
     fn mutate_notebook(&self, notebook: &mut Notebook, _file_path: &str) -> Result<Self::Output> {
         let raw_text = common::parse_source_text(&self.args.source)?;
         let parsed_cells = parse_source_into_cells(&raw_text, &self.args.cell_type);
+        let mut cli_metadata = parse_cli_metadata(&self.args.metadata)?;
 
-        if parsed_cells.len() > 1 && self.args.id.is_some() {
-            bail!("--id cannot be used when adding multiple cells");
+        if parsed_cells.len() > 1 {
+            if self.args.id.is_some() {
+                bail!("--id cannot be used when adding multiple cells");
+            }
+            if cli_metadata.is_some() {
+                bail!("--metadata cannot be used when adding multiple cells");
+            }
         }
 
         let insert_index = resolve_insert_index(self.args, &notebook.cells)?;
@@ -306,7 +316,10 @@ impl CellMutator for AddCellMutator<'_> {
         for (i, parsed) in parsed_cells.into_iter().enumerate() {
             let cell_id = new_cell_id(self.args, &notebook.cells)?;
             let cell_type_str = common::cell_type_enum_str(&parsed.cell_type);
-            let metadata = parsed.metadata.unwrap_or_else(common::empty_cell_metadata);
+            let metadata = cli_metadata
+                .take()
+                .or(parsed.metadata)
+                .unwrap_or_else(common::empty_cell_metadata);
             let new_cell = create_cell(parsed.cell_type, cell_id.clone(), metadata, parsed.source);
 
             let actual_index = insert_index + i;
@@ -334,9 +347,15 @@ impl CellMutator for AddCellMutator<'_> {
 
         let raw_text = common::parse_source_text(&self.args.source)?;
         let parsed_cells = parse_source_into_cells(&raw_text, &self.args.cell_type);
+        let mut cli_metadata = parse_cli_metadata(&self.args.metadata)?;
 
-        if parsed_cells.len() > 1 && self.args.id.is_some() {
-            bail!("--id cannot be used when adding multiple cells");
+        if parsed_cells.len() > 1 {
+            if self.args.id.is_some() {
+                bail!("--id cannot be used when adding multiple cells");
+            }
+            if cli_metadata.is_some() {
+                bail!("--metadata cannot be used when adding multiple cells");
+            }
         }
 
         let insert_index = resolve_insert_index(self.args, &notebook.cells)?;
@@ -347,7 +366,10 @@ impl CellMutator for AddCellMutator<'_> {
         for (i, parsed) in parsed_cells.into_iter().enumerate() {
             let cell_id = new_cell_id(self.args, &notebook.cells)?;
             let cell_type_str = common::cell_type_enum_str(&parsed.cell_type);
-            let metadata = parsed.metadata.unwrap_or_else(common::empty_cell_metadata);
+            let metadata = cli_metadata
+                .take()
+                .or(parsed.metadata)
+                .unwrap_or_else(common::empty_cell_metadata);
             let new_cell = create_cell(parsed.cell_type, cell_id.clone(), metadata, parsed.source);
 
             added_cells.push(AddedCellInfo {
@@ -368,6 +390,14 @@ impl CellMutator for AddCellMutator<'_> {
 
         Ok((added_cells, notebook.cells.len() + num_added))
     }
+}
+
+fn parse_cli_metadata(raw: &Option<String>) -> Result<Option<CellMetadata>> {
+    raw.as_deref()
+        .map(|s| {
+            serde_json::from_str(s).context("Invalid --metadata JSON (expected a JSON object)")
+        })
+        .transpose()
 }
 
 /// Generate (or validate a user-supplied) cell ID, checking for collisions
